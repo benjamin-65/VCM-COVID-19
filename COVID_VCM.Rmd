@@ -1,0 +1,1267 @@
+---
+title: "VCM: COVID Rates Analysis"
+author: "Benjamin Garcia"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+**Getting started**
+
+```{r, message = FALSE, warning = FALSE}
+# Clear workspace
+rm(list = ls())
+
+# Load required libraries
+library(dplyr)       # For data manipulation
+library(ggplot2)     # For plotting
+library(tidyverse)   # pivot_longer
+#library(tidyverse)
+
+```
+
+**COVID rates data**
+
+```{r, message = FALSE, warning = FALSE}
+# Load COVID data
+# source: https://data.cdc.gov/Public-Health-Surveillance/Monthly-Rates-of-Laboratory-Confirmed-COVID-19-Hos/cf5u-bm9w/about_data
+dataCOVID <- read.csv("Monthly_Rates_of_Laboratory-Confirmed_COVID-19_Hospitalizations_from_the_COVID-NET_Surveillance_System_20250303.csv")
+
+```
+
+```{r}
+head(dataCOVID)
+
+# Add 'Month' variable (Month = 1 indicates March 2020, 2 indicates April 2020, ...)
+Year <- as.numeric(substr(dataCOVID$X_YearMonth, 1, 4))
+MonthNum <- as.numeric(substr(dataCOVID$X_YearMonth, 5, 6))
+base_year  <- 2020
+base_month <- 3
+dataCOVID$Month <- 12 * (Year - base_year) + (MonthNum - base_month) + 1
+
+```
+
+```{r}
+summary(as.factor(dataCOVID$Month))
+```
+
+
+```{r}
+# Let's check how the following variables look like: AgeCategory_Legend, Sex_Label, Race_Label
+unique(dataCOVID$AgeCategory_Legend)
+# Category 1: "All" (1 class)
+# Category 2: "0-17 years (Children)", "≥18 years (Adults)" (2 classes)
+# Category 3: "0-<1 year", "1-4 years", "5-17 years", "18-49 years", "50-64 years", "≥65 years" (6 classes)
+# "0-<6 months", "6mo-<12 months", "1-<2 years", "2-4 years", "5-11 years", "12-17 years", "18-29 years", "30-39 years", "40-49 years", "50-64 years", "65-74 years", "75-84 years", "≥85 years" (13 classes)
+# there are two remaining classes, which may be used in Category 1 or 2: "0-4 years", "≥75 years"
+
+```
+
+```{r}
+summary(as.factor(dataCOVID$State))
+```
+
+
+
+```{r}
+unique(dataCOVID$Sex_Label)
+# Category 1: "All"
+# Category 2: "Female", "Male"
+
+```
+
+```{r}
+
+unique(dataCOVID$Race_Label)
+# Category 1: "All"
+# Category 2: "Hispanic", "A/PI, non-Hispanic", "AI/AN, non-Hispanic", "Black, non-Hispanic", "White, non-Hispanic"
+
+```
+
+```{r}
+
+# For now let's aggregate the data over all age, sex, race
+library(dplyr)
+data_aggregated <- dataCOVID %>%
+  filter(AgeCategory_Legend == "All",
+         Sex_Label == "All",
+         Race_Label == "All") %>%
+  group_by(Month) %>%
+  summarize(MonthlyCOVIDRate = mean(MonthlyRate, na.rm = TRUE))
+
+```
+
+
+```{r}
+
+# Consider harmonic terms for seasonal effects
+# updated seasonal effects (removed second pi)
+data_aggregated <- data_aggregated %>%
+  mutate(
+    s1 = cos(2 * pi * Month / 12),
+    s2 = sin(2 * pi * Month / 12),
+    s3 = cos(2 * pi * Month / 6),
+    s4 = sin(2 * pi * Month / 6)
+  )
+
+```
+
+
+```{r}
+# s1 s2 annual cycle
+#s3 S4 semiannual  
+# Visualize the harmonic terms
+harmonics <- data_aggregated %>%
+  pivot_longer(cols = c(s1, s2, s3, s4), names_to = "term", values_to = "value")
+ggplot(harmonics, aes(x = Month, y = value, color = term)) +
+  geom_line() +
+  scale_color_manual(values = c("s1" = "black", "s2" = "red", "s3" = "green", "s4" = "blue")) +
+  labs(x = "Month", y = "Value", title = "Harmonic Terms over Month") +
+  theme_minimal()
+
+```
+
+
+```{r}
+#danny <- data.frame(
+#  day = as.Date("2020-03-01") + c(0,30,60),
+#  value = runif(3) + seq(-140, -138)^2 / 10000
+#)
+#runif(6)
+# Most basic bubble plot
+#p <- ggplot(danny, aes(x=day, y=value)) +
+#  geom_line() + 
+#  xlab("")
+#p
+
+ start_date <- as.Date("2020-03-01")
+    end_date <- as.Date("2025-02-01")
+    monthly_dates <- seq(start_date, end_date, by = "1 month")
+    print(monthly_dates)
+
+```
+
+
+
+```{r}
+data_aggregated$date <- monthly_dates
+```
+
+
+```{r}
+
+# Visualize the COVID rates
+ggplot(data_aggregated, aes(x = date, y = MonthlyCOVIDRate)) +
+  geom_line() +
+  labs(x = 'Date', y = "COVID-NET Hospitalization Rate") +
+  ggtitle("Aggregate Average COVID-NET Monthly Hospitalization Rate")+
+  scale_x_date(date_breaks = '6 months', date_labels = "%m-%Y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(face="bold", size = 11)) +
+  theme(axis.text.y = element_text(face = 'bold', size = 11))
+```
+
+
+```{r}
+ggplot(data_aggregated, aes(x = Month, y = MonthlyCOVIDRate)) +
+  geom_line() +
+  labs(x = 'Date', y = "COVID-NET Hospitalization Rate") +
+  ggtitle("Aggregate Average COVID-NET Monthly Hospitalization Rate")+
+  #scale_x_date(date_breaks = '6 months', date_labels = "%m-%Y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(face="bold", size = 11)) +
+  theme(axis.text.y = element_text(face = 'bold', size = 11))
+```
+
+
+```{r}
+datcov3 <- dataCOVID[dataCOVID$AgeCategory_Legend == 'All',]
+datcov3 <- datcov3[datcov3$Sex_Label == 'All',]
+datcov3 <- datcov3[datcov3$Race_Label == 'All',]
+mean(datcov3[datcov3$Month == 60,7], na.rm = T)
+
+```
+
+
+**Flu rates data**
+
+```{r, message = FALSE, warning = FALSE}
+dataFlu <- read.csv("FluSurveillance_Custom_Download_Data.csv", skip = 2)
+
+dataFlu <- dataFlu[1:(nrow(dataFlu) - 29),] # exclude the description attached at the bottom
+
+
+```
+
+
+
+```{r}
+head(dataFlu)
+
+# Convert week to month
+dataFlu <- dataFlu %>%
+  mutate(
+    month = case_when(
+      WEEK >= 40 & WEEK <= 43 ~ 10,
+      WEEK >= 44 & WEEK <= 47 ~ 11,
+      WEEK >= 48 & WEEK <= 53 ~ 12,
+      WEEK >= 1  & WEEK <= 4  ~ 1,
+      WEEK >= 5  & WEEK <= 8  ~ 2,
+      WEEK >= 9  & WEEK <= 12 ~ 3,
+      WEEK >= 13 & WEEK <= 17 ~ 4,
+      WEEK >= 18 & WEEK <= 21 ~ 5,
+      WEEK >= 22 & WEEK <= 26 ~ 6,
+      WEEK >= 27 & WEEK <= 30 ~ 7,
+      WEEK >= 31 & WEEK <= 35 ~ 8,
+      WEEK >= 36 & WEEK <= 39 ~ 9,
+      TRUE ~ NA_real_  # fallback if none match
+    )
+  )
+
+
+```
+
+```{r}
+summary(as.factor(dataFlu$YEAR.1))
+dataFlu <- dataFlu[dataFlu$YEAR.1 !='2019',]
+#dataFlu <- dataFlu[dataFlu$]
+
+```
+
+```{r}
+dataFlu <- dataFlu[(dataFlu$YEAR.1 != '2020') | (dataFlu$month > 2),]
+
+# eliminate jan and feb in 2020
+```
+
+
+
+```{r}
+summary(as.factor(dataFlu$YEAR.1))
+summary(as.factor(dataFlu$month))
+table(as.factor(dataFlu$YEAR.1), as.factor(dataFlu$month))
+```
+
+```{r}
+# eliminate march and april of 2025 (had no occurred at the time of data extraction)
+
+dataFlu <- dataFlu[(dataFlu$YEAR.1 != '2025') | (dataFlu$month < 3),]
+```
+
+
+```{r}
+table(as.factor(dataFlu$YEAR.1), as.factor(dataFlu$month))
+```
+
+
+
+```{r}
+# Add 'Month' variable (Month = 1 indicates March 2020, 2 indicates April 2020, ...)
+Year <- as.numeric(dataFlu$YEAR.1)
+MonthNum <- as.numeric(dataFlu$month)
+base_year  <- 2020
+base_month <- 3
+dataFlu$Month <- 12 * (Year - base_year) + (MonthNum - base_month) + 1
+
+```
+
+```{r}
+summary(as.factor(dataFlu$Month))
+```
+```{r}
+summary(as.factor(dataFlu$CATCHMENT))
+head(dataFlu[dataFlu$Month == 62,])
+# month 61 and 62 
+```
+
+```{r}
+summary(as.factor(dataFlu$WEEK))
+```
+
+
+```{r}
+
+# For now let's aggregate the data over all age, sex, race, virus type
+dataFlu$WEEKLY.RATE[dataFlu$WEEKLY.RATE == "null"] <- NA
+dataFlu$WEEKLY.RATE <- as.numeric(dataFlu$WEEKLY.RATE)
+
+dataFlu_aggregated <- dataFlu %>%
+  filter(AGE.CATEGORY == "Overall",
+         SEX.CATEGORY == "Overall",
+         RACE.CATEGORY == "Overall",
+         VIRUS.TYPE.CATEGORY == "Overall") %>%
+  group_by(Month) %>%
+  summarize(MonthlyFluRate = sum(WEEKLY.RATE, na.rm = TRUE))
+
+```
+
+
+
+```{r}
+# imput data
+
+library(imputeTS)
+
+nr1 <- data.frame(Month = c(3,4,5,6,7), MonthlyFluRate = c(NA, NA, NA, NA, NA))
+nr2 <- data.frame(Month = c(15, 16, 17, 18, 19), MonthlyFluRate = c(NA, NA, NA, NA, NA))
+nr3 <- data.frame(Month = c(29, 30, 31), MonthlyFluRate = c(NA, NA, NA))
+nr4 <- data.frame(Month = c(39, 40, 41, 42, 43), MonthlyFluRate = c(NA, NA, NA, NA, NA))
+dataFlu_aggregated <- rbind(dataFlu_aggregated[1:2, ], nr1, dataFlu_aggregated[3:9, ], nr2, dataFlu_aggregated[10:18,],
+                            nr3, dataFlu_aggregated[19:25,], nr4, dataFlu_aggregated[26:42,])
+#imputeTS::na_se
+# Decomposes time series, imputes trend/seasonal separately
+#fluff <- na_seadec(flu_data$hospitalizations, algorithm = "interpolation")
+```
+
+```{r}
+#imputeTS::na_se
+# Decomposes time series, imputes trend/seasonal separately
+dataFlu_aggregated$MonthlyFluRate <- na_seadec(dataFlu_aggregated$MonthlyFluRate, algorithm = "interpolation")
+```
+
+
+
+```{r}
+# Visualize the flu rates
+ggplot(dataFlu_aggregated, aes(x = data_aggregated$date , y = MonthlyFluRate)) +
+  geom_line() +
+  labs(x = "Month", y = "Monthly Flu Rate") +
+  scale_x_date(date_breaks = '6 months', date_labels = "%m-%Y")+
+  ggtitle("Aggregate Average Flu Monthly Hospitalization Rate")+
+  theme_minimal() +
+  theme(axis.text.x = element_text(face="bold", size = 11)) +
+  theme(axis.text.y = element_text(face = 'bold', size = 11))
+```
+
+**rsv rates data**
+
+```{r, message = FALSE, warning = FALSE}
+dataRSV <- read.csv("Monthly_Rates_of_Laboratory-Confirmed_RSV_Hospitalizations_from_the_RSV-NET_Surveillance_System_20250401.csv")
+
+```
+
+
+```{r}
+head(dataRSV)
+
+```
+
+```{r}
+colnames(dataRSV)[3] <- "Year_Month"
+```
+
+
+```{r}
+
+# Add 'Month' variable (Month = 1 indicates March 2020, 2 indicates April 2020, ...)
+Year <- as.numeric(substr(dataRSV$Year_Month, 1, 4))
+MonthNum <- as.numeric(substr(dataRSV$Year_Month, 5, 6))
+base_year  <- 2020
+base_month <- 3
+dataRSV$Month <- 12 * (Year - base_year) + (MonthNum - base_month) + 1
+```
+
+
+```{r}
+summary(as.factor(dataRSV$Month))
+head(dataRSV[dataRSV$Month == -40,])
+```
+
+```{r}
+dataRSV <- dataRSV[(dataRSV$Year_Month > '202002') & (dataRSV$Year_Month < '202503'),]
+```
+
+
+```{r}
+summary(as.factor(dataRSV$Month))
+```
+
+```{r}
+unique(dataRSV$Age.Category)
+summary(as.factor(dataRSV$State))
+unique(dataRSV$Sex)
+unique(dataRSV$Race)
+```
+```{r}
+library(dplyr)
+dataRSV_aggregated <- dataRSV %>%
+  filter(Age.Category == "All",
+         Sex == "All",
+         Race == "All") %>%
+  group_by(Month) %>%
+  summarize(MonthlyRSVRate = mean(Rate, na.rm = TRUE))
+```
+
+
+```{r}
+nr1rsv <- data.frame(Month = c(3,4,5,6,7), MonthlyRSVRate = c(NA, NA, NA, NA, NA))
+
+dataRSV_aggregated <- rbind(dataRSV_aggregated[1:2, ], nr1rsv, dataRSV_aggregated[3:55, ])
+```
+
+
+```{r}
+dataRSV_aggregated$MonthlyRSVRate <- na_seadec(dataRSV_aggregated$MonthlyRSVRate, algorithm = "interpolation")
+```
+
+
+
+```{r}
+ggplot(dataRSV_aggregated, aes(x = data_aggregated$date, y = MonthlyRSVRate)) +
+  geom_line() +
+  labs(x = "Month", y = "Monthly RSV Rate") +
+  scale_x_date(date_breaks = '6 months', date_labels = "%m-%Y")+
+  ggtitle("Aggregate Average RSV Monthly Hospitalization Rate")+
+  theme_minimal() +
+  theme(axis.text.x = element_text(face="bold", size = 11)) +
+  theme(axis.text.y = element_text(face = 'bold', size = 11))
+```
+
+
+
+**Combine three data sets**
+
+```{r, message = FALSE, warning = FALSE}
+# Select overlapped Month
+combineddata <- inner_join(data_aggregated, dataFlu_aggregated, by = "Month")
+combined_data <- inner_join(combineddata, dataRSV_aggregated)
+## Make the smallest Month -> 1 (not neccessary)
+#combined_data <- combined_data %>%
+#  mutate(Month = Month - 7)
+
+# Explanatory data analysis:
+# check scatter plot and see the relationship between predictor and response over time.
+library(ggplot2)
+ggplot(combined_data,
+       aes(x = MonthlyFluRate, y = MonthlyCOVIDRate, color = Month)) +
+  geom_point() +
+  theme(axis.text.x = element_text(face="bold", size = 11)) +
+  theme(axis.text.y = element_text(face = 'bold', size = 11))
+```
+
+```{r}
+# in the early months or dark circles we see as there is an increase in covid rate there is only a little increase in flu rate. In later months, as flu rate increases there is not much increase in covid rates. Per 100,000
+```
+
+
+```{r}
+library(ggplot2)
+ggplot(combined_data,
+       aes(x = MonthlyRSVRate, y = MonthlyCOVIDRate, color = Month)) +
+  geom_point() +
+  theme(axis.text.x = element_text(face="bold", size = 11)) +
+  theme(axis.text.y = element_text(face = 'bold', size = 11))
+```
+
+
+```{r}
+qnorm(.9) # qnorm is probability convert to z-score
+dnorm(0) #is pdf value at that specific points
+rnorm(8) # random number generation from mean 0 sd 1
+pnorm(1.28) # pnorm is z-score converted to probability to the left
+```
+
+
+**Modeling**
+
+```{r, message = FALSE, warning = FALSE}
+# ESTIMATION: VCM
+
+# Kernel function
+my.w <- function(X, type = "epanechnikov"){
+  if(type == "gaussian"){
+    wts <- dnorm(X)
+  } else if(type == "epanechnikov"){
+    wts <- (3/4) * (1 - X^2) * ifelse(1 < X^2, 0, 1)
+  }
+  return(wts)
+}
+
+# My own VCM function
+vcm <- function(y, X, type = "epanechnikov", t, grid, bandwidth){
+  num.grid <- length(grid)
+  n <- nrow(X); k <- 1 + ncol(X)
+  y.vec <- matrix(y, length(y), 1)
+  X.mat <- as.matrix(cbind("intercept" = 1, X))
+  coef.res <- se.res <- matrix(NA, num.grid, k); mse <- 0
+  for(i in 1:num.grid){
+    U.star <- as.matrix(diag(t - grid[i], n, n))
+    Gamma.mat <- cbind(X.mat, U.star %*% X.mat)
+    wts <- my.w((t - grid[i])/bandwidth, type)/bandwidth
+    W <- as.matrix(diag(wts, n, n))
+    est.beta <- solve(t(Gamma.mat) %*% W %*% Gamma.mat) %*%
+      (t(Gamma.mat) %*% W %*% y.vec)
+    coef.res[i, ] <- est.beta <- diag(1, k, 2 * k) %*% est.beta
+    sigma.hat <- sum((y - X.mat %*% est.beta)^2 * wts)/sum(wts)
+    Cov.mat <- solve(t(Gamma.mat) %*% W %*% Gamma.mat) %*%
+      (t(Gamma.mat) %*% W %*% W %*% Gamma.mat) %*%
+      solve(t(Gamma.mat) %*% W %*% Gamma.mat) * sigma.hat
+    se.res[i, ] <- diag(Cov.mat[1:k, 1:k])
+    mse <- mse + mean((y - X.mat %*% est.beta)^2)
+  }
+  return(list(mse = mse/num.grid, coef = coef.res, se = se.res))
+}
+
+```
+
+
+```{r}
+combined_data <- combined_data %>% relocate(date, .after = MonthlyRSVRate)
+
+```
+
+
+```{r}
+#shapiro.test(combined_data$MonthlyCOVIDRate)
+#plot(density(combined_data$MonthlyCOVIDRate))
+```
+
+```{r}
+#shapiro.test(combined_data$s1)
+#plot(density(combined_data$s1))
+```
+
+```{r}
+#shapiro.test(combined_data$s3)
+#plot(density(combined_data$s3))
+```
+
+```{r}
+#shapiro.test(combined_data$MonthlyFluRate)
+#plot(density(combined_data$MonthlyFluRate))
+```
+
+
+```{r}
+#shapiro.test(combined_data$MonthlyRSVRate)
+#plot(density(combined_data$MonthlyRSVRate))
+```
+
+
+
+
+```{r}
+# LEAVE-ONE-OUT CROSS VALIDATION
+
+
+#MSE.LOOCV <- vector()
+#for(j in 40:50) {
+#  SE <- vector()
+#for(i in 1:42) {
+#  train <- combined_data[-i,c(1:8)]
+#  test <- combined_data[i,c(1:8)]
+  
+  
+  ####################
+#  vcm.fit_cv <- vcm(y = train$MonthlyCOVIDRate, X = train[,c(3:8)],
+ #              grid = train$Month, t = train$Month, bandwidth = j)
+  
+  ##### pred ###############
+  
+  #num.grid <- length(train$Month)
+  #n <- nrow(train[,c(3:8)])
+  #k <- 1 + ncol(train[,c(3:8)])
+  #y.vec <- matrix(train$MonthlyCOVIDRate, length(train$MonthlyCOVIDRate), 1)
+  #X.mat <- as.matrix(cbind("intercept" = 1, train[,c(3:8)]))
+  #coef.res <- se.res <- matrix(NA, num.grid, k)
+  #mse <- 0
+  #for(p in 1:num.grid){
+    #U.star <- as.matrix(diag(train$Month - train$Month[p], n, n))
+    #Gamma.mat <- cbind(X.mat, U.star %*% X.mat)
+    #wts <- my.w((train$Month - train$Month[p])/j, type)/j
+    #W <- as.matrix(diag(wts, n, n))
+    #est.beta <- solve(t(Gamma.mat) %*% W %*% Gamma.mat) %*%
+    #  (t(Gamma.mat) %*% W %*% y.vec)
+   # est.beta <- diag(1, k, 2 * k) %*% est.beta
+  #  coef.res[p, ] <- est.beta
+  
+ # }
+  #vcm.pred_cv <- colMeans(vcm.fit_cv$coef) %*% t(as.matrix(cbind("intercept" = 1, test[,c(3:8)])))
+  #############
+  #lm.fit <- lm(Sales ~ TV + Radio + Newspaper, data=train)
+  #lm.pred <- predict(lm.fit, newdata=test)
+  #as.matrix(cbind("intercept" = 1, X))
+  #colMeans(vcm.fit$coef)
+  
+#  SE.i <- (vcm.pred_cv - test$MonthlyCOVIDRate)^2
+#  SE <- rbind(SE, SE.i)
+#}
+# nam <- paste("MSE.LOOCV.", j, sep = "")
+# assign(nam, mean(SE))
+
+#MSE.LOOCV.j <- mean(SE)
+#MSE.LOOCV <- rbind(MSE.LOOCV, MSE.LOOCV.j)
+#}
+
+```
+
+
+
+
+```{r}
+# Fitting a VCM
+vcm.fit <- vcm(y = combined_data$MonthlyCOVIDRate, X = combined_data[, c(3:8)],
+               grid = combined_data$Month, t = combined_data$Month, bandwidth = 40)
+
+# Estimated coefficients and the corresponding 95% confidence intervals
+upper <- vcm.fit$coef + 1.96 * sqrt(vcm.fit$se)
+lower <- vcm.fit$coef - 1.96 * sqrt(vcm.fit$se)
+
+# Averaged results
+colMeans(vcm.fit$coef)
+colMeans(lower)
+colMeans(upper)
+
+```
+
+```{r}
+#vcm.fit # mean square error, coefficients for each of the 42 months for intercept and then 4 seasonal terms and flu and rsv monthly rates,  standard error for each of the coefficients
+```
+
+
+```{r}
+vcm_bb <- data.frame(bandwidth = c(30:800), mse = rep(NA, 771) )
+for (j in 30:800) {
+vcm.fit <- vcm(y = combined_data$MonthlyCOVIDRate, X = combined_data[, c(3:8)],
+               grid = combined_data$Month, t = combined_data$Month, bandwidth = j)
+vcm_bb[j-29,2] <- vcm.fit$mse
+}
+```
+
+
+```{r}
+plot(x = vcm_bb$bandwidth, y = vcm_bb$mse, ylim = c(563,570))
+```
+
+
+```{r}
+# Fitting a VCM
+vcm.fit <- vcm(y = combined_data$MonthlyCOVIDRate, X = combined_data[, c(3:8)],
+               grid = combined_data$Month, t = combined_data$Month, bandwidth = 800)
+
+# Estimated coefficients and the corresponding 95% confidence intervals
+upper <- vcm.fit$coef + 1.96 * sqrt(vcm.fit$se)
+lower <- vcm.fit$coef - 1.96 * sqrt(vcm.fit$se)
+
+# Averaged results
+colMeans(vcm.fit$coef)
+colMeans(lower)
+colMeans(upper)
+vcm.fit$mse
+```
+
+
+```{r}
+# Plotting
+par(mfrow = c(2, 4))
+plot(combined_data$Month, vcm.fit$coef[, 1], type = "l", ylim = c(- 80, 200),
+     xlab = "month", ylab = "coefficient", main = "(intercept)")
+lines(combined_data$Month, upper[, 1], lty = 2)
+lines(combined_data$Month, lower[, 1], lty = 2)
+for(j in 2:5){
+  plot(combined_data$Month, vcm.fit$coef[, j], type = "l", ylim = c(- 200, 200),
+       xlab = "month", ylab = "coefficient", main = paste("s", j - 1, sep = ""))
+  lines(combined_data$Month, upper[, j], lty = 2)
+  lines(combined_data$Month, lower[, j], lty = 2)
+}
+plot(combined_data$Month, vcm.fit$coef[, 6], type = "l", ylim = c(- 10, 10),
+     xlab = "month", ylab = "coefficient", main = "x (flu rates)")
+lines(combined_data$Month, upper[, 6], lty = 2)
+lines(combined_data$Month, lower[, 6], lty = 2)
+
+plot(combined_data$Month, vcm.fit$coef[, 7], type = "l", ylim = c(- 10, 10),
+     xlab = "month", ylab = "coefficient", main = "x (rsv rates)")
+lines(combined_data$Month, upper[, 7], lty = 2)
+lines(combined_data$Month, lower[, 7], lty = 2)
+
+```
+
+```{r}
+#combined_data <- combined_data[,-10]
+#combined_data$predicted_mon_cov_rate <- 0
+```
+
+
+```{r}
+# mse
+predictor.mat <- as.matrix(cbind("intercept" = 1, combined_data[,3:8]))
+predicted_val <- matrix(NA, 60, 1)
+#for(i in 1:nrow(combined_data)) {
+#predicted_val[i,] <- predictor.mat[i,] %*% vcm.fit$coef[i,]
+  
+#}
+#mean((combined_data$MonthlyCOVIDRate - predicted_val)^2)
+```
+
+
+```{r}
+
+```
+
+
+
+```{r}
+#sum( predictor.mat[10,] * vcm.fit$coef[10,])
+#predictor.mat[10,] %*% vcm.fit$coef[10,]
+```
+
+
+
+```{r}
+
+# ESTIMATION: VCM with package
+library(mgcv)
+gam_fit <- gam(MonthlyCOVIDRate ~ s(Month, k = 14) + # time-varying intercept
+             s(Month, by = s1, k = 14) +
+             s(Month, by = s2, k = 14) +
+             s(Month, by = s3, k = 14) +
+             s(Month, by = s4, k = 14) +
+             s(Month, by = MonthlyFluRate, k = 14) +
+           s(Month, by = MonthlyRSVRate, k = 14),
+           data = combined_data, family = gaussian)
+coef(gam_fit)
+plot(gam_fit, pages = 1)
+
+#gam_fit$coefficients
+
+
+```
+
+```{r}
+par(mfrow = c(2, 4))
+plot(gam_fit, select = 1,     xlab = "month", ylab = "coefficient", main = "(intercept)")
+plot(gam_fit, select = 2,     xlab = "month", ylab = "coefficient", main = "s1")
+plot(gam_fit, select = 3,     xlab = "month", ylab = "coefficient", main = "s2")
+plot(gam_fit, select = 4,     xlab = "month", ylab = "coefficient", main = "s3")
+plot(gam_fit, select = 5,     xlab = "month", ylab = "coefficient", main = "s4")
+plot(gam_fit, select = 6, ylim = c(-10, 10),     xlab = "month", ylab = "coefficient", main = "x1 (flu rates)")
+plot(gam_fit, select = 7, ylim = c(-10, 10),     xlab = "month", ylab = "coefficient", main = "x2 (RSV rates)")
+
+```
+
+
+
+```{r}
+#gam.check(gam_fit)
+gam.check(gam(MonthlyCOVIDRate ~ s(Month, k = 14) + # time-varying intercept
+             s(Month, by = s1, k = 14) +
+             s(Month, by = s2, k = 14) +
+             s(Month, by = s3, k = 14) +
+             s(Month, by = s4, k = 14) +
+             s(Month, by = MonthlyFluRate, k = 14) +
+           s(Month, by = MonthlyRSVRate, k = 14),
+           data = combined_data, family = gaussian))
+
+
+```
+
+```{r}
+k_values <- c(4, 5, 13, 14)
+results_k <- data.frame()
+
+for (k in k_values) {
+  model <- gam(MonthlyCOVIDRate ~ s(Month, k = k) + # time-varying intercept
+             s(Month, by = s1, k = k) +
+             s(Month, by = s2, k = k) +
+             s(Month, by = s3, k = k) +
+             s(Month, by = s4, k = k) +
+             s(Month, by = MonthlyFluRate, k = k) +
+           s(Month, by = MonthlyRSVRate, k = k),
+           data = combined_data, family = gaussian)
+  aic <- AIC(model)
+  results_k <- rbind(results_k, data.frame(k = k, AIC = aic))
+}
+
+print(results_k)
+```
+
+With k there are a lot of similar values near each other 1 through 4 close to 5, then there are peaks and dropoffs.
+
+
+```{r}
+#results_gam <- data.frame()
+#for (k in 1:2) {
+
+#loo_errors_gam <- numeric(nrow(combined_data))
+#for (i in 1:nrow(combined_data)) {
+  
+  # 1. Split the data into training and test sets by leaving out the i-th observation
+#  data_train <- combined_data[-i, ]   # Training data (leave out the i-th row)
+#  data_test <- combined_data[i, ]  # Test data (just the i-th row)
+  
+  # 2. Fit a varying coefficient model (GAM) on the training data
+  # 's(X, by = t)' means the coefficient of X varies with respect to t
+ # model_train <- gam(Y ~ s(X, by = t) + s(t), data = data_train)
+#  model_train <- gam(MonthlyCOVIDRate ~ s(Month, k = k) + # time-varying intercept
+#                   s(Month, by = s1, k = k) +
+#                   s(Month, by = s2, k = k) +
+#                   s(Month, by = s3, k = k) +
+#                   s(Month, by = s4, k = k) +
+#                   s(Month, by = MonthlyFluRate, k = k) +
+#                   s(Month, by = MonthlyRSVRate, k = k),
+#                 data = data_train, family = gaussian)
+  # 3. Make predictions for the left-out observation (the i-th one)
+#  pred <- predict(model_train, newdata = data_test)
+  
+  # 4. Calculate the error for this fold (e.g., Mean Squared Error)
+#  loo_errors_gam[i] <- (pred - data_test$MonthlyCOVIDRate)^2  # Squared error for LOO
+  
+#}
+
+# 5. Compute overall error (Mean Squared Error)
+#GAM_mean_loo_error <- mean(loo_errors_gam)
+#results_gam <- rbind(results_gam, data.frame(k = k, gam_mse = GAM_mean_loo_error))
+#}
+#print(paste("GAM Mean LOO Error (MSE):", GAM_mean_loo_error))
+```
+
+```{r}
+results_gam2 <- data.frame()
+for (k in 8:9) {
+
+loo_errors_gam <- numeric(nrow(combined_data))
+for (i in 1:nrow(combined_data)) {
+  
+  # 1. Split the data into training and test sets by leaving out the i-th observation
+  data_train <- combined_data[-i, ]   # Training data (leave out the i-th row)
+  data_test <- combined_data[i, ]  # Test data (just the i-th row)
+  
+  # 2. Fit a varying coefficient model (GAM) on the training data
+  # 's(X, by = t)' means the coefficient of X varies with respect to t
+ # model_train <- gam(Y ~ s(X, by = t) + s(t), data = data_train)
+  model_train <- gam(MonthlyCOVIDRate ~ s(Month, k = k) + # time-varying intercept
+                   s(Month, by = s1, k = k) +
+                   s(Month, by = s2, k = k) +
+                   s(Month, by = s3, k = k) +
+                   s(Month, by = s4, k = k) +
+                   s(Month, by = MonthlyFluRate, k = k) +
+                   s(Month, by = MonthlyRSVRate, k = k),
+                 data = data_train, family = gaussian)
+  # 3. Make predictions for the left-out observation (the i-th one)
+  pred <- predict(model_train, newdata = data_test)
+  
+  # 4. Calculate the error for this fold (e.g., Mean Squared Error)
+  loo_errors_gam[i] <- (pred - data_test$MonthlyCOVIDRate)^2  # Squared error for LOO
+  
+}
+
+# 5. Compute overall error (Mean Squared Error)
+GAM_mean_loo_error <- mean(loo_errors_gam)
+results_gam2 <- rbind(results_gam2, data.frame(k = k, gam_mse = GAM_mean_loo_error))
+}
+```
+
+
+
+
+```{r}
+
+k = 14
+
+#gam loocv
+loo_errors_gam <- numeric(nrow(combined_data))
+for (i in 1:nrow(combined_data)) {
+  
+  # 1. Split the data into training and test sets by leaving out the i-th observation
+  data_train <- combined_data[-i, ]   # Training data (leave out the i-th row)
+  data_test <- combined_data[i, ]  # Test data (just the i-th row)
+  
+  # 2. Fit a varying coefficient model (GAM) on the training data
+  # 's(X, by = t)' means the coefficient of X varies with respect to t
+ # model_train <- gam(Y ~ s(X, by = t) + s(t), data = data_train)
+  model_train <- gam(MonthlyCOVIDRate ~ s(Month, k = k) + # time-varying intercept
+                   s(Month, by = s1, k = k) +
+                   s(Month, by = s2, k = k) +
+                   s(Month, by = s3, k = k) +
+                   s(Month, by = s4, k = k) +
+                   s(Month, by = MonthlyFluRate, k = k) +
+                   s(Month, by = MonthlyRSVRate, k = k),
+                 data = data_train, family = gaussian)
+  # 3. Make predictions for the left-out observation (the i-th one)
+  pred <- predict(model_train, newdata = data_test)
+  
+  # 4. Calculate the error for this fold (e.g., Mean Squared Error)
+  loo_errors_gam[i] <- (pred - data_test$MonthlyCOVIDRate)^2  # Squared error for LOO
+  
+}
+
+# 5. Compute overall error (Mean Squared Error)
+GAM_mean_loo_error <- mean(loo_errors_gam)
+print(paste("GAM Mean LOO Error (MSE):", GAM_mean_loo_error))
+results_gam <- rbind(results_gam, data.frame(k = k, gam_mse = GAM_mean_loo_error) )
+```
+```{r}
+k.check(gam_fit)
+```
+
+
+
+```{r}
+# ESTIMATION: LM
+lm.fit <- lm(MonthlyCOVIDRate ~ ., data = combined_data[, c(2:8)])
+summary(lm.fit)$coef[, 1]
+summary(lm.fit)$coef[, 1] - 1.96 * summary(lm.fit)$coef[, 2]
+summary(lm.fit)$coef[, 1] + 1.96 * summary(lm.fit)$coef[, 2]
+
+
+```
+
+
+```{r}
+lm.fit$coefficients
+lm.fit$residuals
+lm.fit$fitted.values
+```
+
+```{r}
+loo_errors_lm <- numeric(nrow(combined_data))
+for (i in 1:nrow(combined_data)) {
+  
+  # 1. Split the data into training and test sets by leaving out the i-th observation
+  data_train <- combined_data[-i, ]   # Training data (leave out the i-th row)
+  data_test <- combined_data[i, ]  # Test data (just the i-th row)
+  
+  # 2. Fit a varying coefficient model (GAM) on the training data
+  # 's(X, by = t)' means the coefficient of X varies with respect to t
+  # model_train <- gam(Y ~ s(X, by = t) + s(t), data = data_train)
+  
+  model_train <- lm(MonthlyCOVIDRate ~ ., data = data_train[, c(2:8)])
+  
+  
+  # 3. Make predictions for the left-out observation (the i-th one)
+  pred <- predict(model_train, newdata = data_test[, c(2:8)])
+  
+  # 4. Calculate the error for this fold (e.g., Mean Squared Error)
+  loo_errors_lm[i] <- (pred - data_test$MonthlyCOVIDRate)^2  # Squared error for LOO
+  
+}
+
+# 5. Compute overall error (Mean Squared Error)
+lm_mean_loo_error <- mean(loo_errors_lm)
+print(paste("LM Mean LOO Error (MSE):", lm_mean_loo_error))
+```
+
+
+```{r}
+summary(lm.fit)
+```
+
+
+```{r}
+#tvreg lm
+
+tvReg::bw(x = combined_data[,c(3:8)], y = combined_data$MonthlyCOVIDRate, z = combined_data$Month,
+         est = 'll',  tkernel = "Epa")
+
+tvlm <- tvReg::tvLM( MonthlyCOVIDRate ~ s1 + s2 + s3 + s4 + MonthlyFluRate + MonthlyRSVRate, z = combined_data$Month,
+             data = combined_data, bw = NULL, cv.block = 0, est = 'll', tkernel = 'Epa')
+
+tvlm$coefficients
+tvlm$residuals
+tvlm$bw
+```
+
+```{r}
+mean(tvlm$residuals^2)
+```
+
+
+
+```{r}
+loo_errors_tvlm <- numeric(nrow(combined_data))
+for (i in 1:nrow(combined_data)) {
+  
+  # 1. Split the data into training and test sets by leaving out the i-th observation
+  data_train <- combined_data[-i, ]   # Training data (leave out the i-th row)
+  data_test <- combined_data[i, ]  # Test data (just the i-th row)
+  
+  # 2. Fit a varying coefficient model (GAM) on the training data
+  # 's(X, by = t)' means the coefficient of X varies with respect to t
+  # model_train <- gam(Y ~ s(X, by = t) + s(t), data = data_train)
+  model_train <- tvReg::tvLM( MonthlyCOVIDRate ~ s1 + s2 + s3 + s4 + MonthlyFluRate + MonthlyRSVRate, z = data_train$Month,
+                              data = data_train,  bw = 56, est = 'll', tkernel = 'Epa')
+  # 3. Make predictions for the left-out observation (the i-th one)
+  pred <- predict(model_train, newdata = as.matrix(data_test[,3:8]), newz = data_test$Month )
+  
+  # 4. Calculate the error for this fold (e.g., Mean Squared Error)
+  loo_errors_tvlm[i] <- (pred - data_test$MonthlyCOVIDRate)^2  # Squared error for LOO
+  
+}
+
+# 5. Compute overall error (Mean Squared Error)
+tvlm_mean_loo_error <- mean(loo_errors_tvlm)
+print(paste("TVLM Mean LOO Error (MSE):", tvlm_mean_loo_error))
+
+```
+setting bandwidth to constant 56 instead of recalculating bandwidth each iteration
+resulted in a lower mse from 257 to 250
+
+```{r}
+# Estimation: Random Forest
+
+library(randomForest)
+RF.fit <- randomForest(MonthlyCOVIDRate ~ ., combined_data[,c(2:8)])
+
+```
+
+```{r}
+varImpPlot(RF.fit)
+```
+
+```{r}
+library(caret)
+library(randomForest)
+
+set.seed(123)
+
+tune_grid <- expand.grid(
+  .mtry = 2:5
+)
+
+control <- trainControl(method = "LOOCV")
+
+rf_caret <- train(
+  MonthlyCOVIDRate ~ .,
+  data = combined_data[,2:8],
+  method = "rf",
+  tuneGrid = tune_grid,
+  trControl = control,
+  ntree = 300
+)
+
+print(rf_caret)
+plot(rf_caret)
+```
+
+```{r}
+RF.fit <- randomForest(MonthlyCOVIDRate ~ ., combined_data[,c(2:8)], mtry = 2, ntree = 300 )
+```
+
+```{r}
+varImpPlot(RF.fit)
+```
+
+
+```{r}
+set.seed(123)
+loo_errors_rf <- numeric(nrow(combined_data))
+for (i in 1:nrow(combined_data)) {
+  
+  # 1. Split the data into training and test sets by leaving out the i-th observation
+  data_train <- combined_data[-i, ]   # Training data (leave out the i-th row)
+  data_test <- combined_data[i, ]  # Test data (just the i-th row)
+  
+  # 2. Fit a varying coefficient model (GAM) on the training data
+  # 's(X, by = t)' means the coefficient of X varies with respect to t
+  # model_train <- gam(Y ~ s(X, by = t) + s(t), data = data_train)
+  
+  model_train <- randomForest(MonthlyCOVIDRate ~ ., data = data_train[, c(2:8)] )
+  
+  
+  # 3. Make predictions for the left-out observation (the i-th one)
+  pred <- predict(model_train, newdata = data_test[, c(2:8)])
+  
+  # 4. Calculate the error for this fold (e.g., Mean Squared Error)
+  loo_errors_rf[i] <- (pred - data_test$MonthlyCOVIDRate)^2  # Squared error for LOO
+  
+}
+
+# 5. Compute overall error (Mean Squared Error)
+rf_mean_loo_error <- mean(loo_errors_rf)
+print(paste("RF Mean LOO Error (MSE):", rf_mean_loo_error))
+```
+random forest as we will see below does well predict data that it was trained on, but when the data is new the random forest is having a relatively harder time compared to tvreg and gam
+
+parameter tuning made the mse go up.
+
+```{r}
+mse_loocv_results <- data.frame(Method = c('LM', 'RF', 'VCM', 'TVLM'),
+                                LOOCV_MSE = c(384.5461,475.3656,149.7082,250.7947),
+                                MSE = c(296.1591, 108.6397, 25.8242, 153.7098))
+mse_loocv_results <- mse_loocv_results[order(-mse_loocv_results$LOOCV_MSE),]
+```
+
+
+```{r, message = FALSE, warning = FALSE}
+set.seed(123)
+# COMPARISON: in terms of predictive abilities
+res.pred <- matrix(NA, length(combined_data$Month), 4)
+lm.fit <- lm(MonthlyCOVIDRate ~ ., data = combined_data[, c(2:8)])
+RF.fit <- randomForest(MonthlyCOVIDRate ~ ., combined_data[,c(2:8)])
+res.pred[, 1] <- predict(lm.fit, newdata = combined_data[, c(2:8)])
+res.pred[, 2] <- predict(RF.fit, newdata = combined_data[,c(2:8)]) 
+  b <- gam(MonthlyCOVIDRate ~ s(Month, k = 14) + # time-varying intercept
+             s(Month, by = s1, k = 14) +
+             s(Month, by = s2, k = 14) +
+             s(Month, by = s3, k = 14) +
+             s(Month, by = s4, k = 14) +
+             s(Month, by = MonthlyFluRate, k = 14) +
+             s(Month, by = MonthlyRSVRate, k = 14),
+           data = combined_data, family = gaussian)
+  res.pred[, 3] <- predict(b, newdata = combined_data[, c(1:8)])
+
+  tvlm <- tvReg::tvLM( MonthlyCOVIDRate ~ s1 + s2 + s3 + s4 + MonthlyFluRate + MonthlyRSVRate, z = combined_data$Month,
+             data = combined_data, bw = NULL, cv.block = 0, est = 'll', tkernel = 'Epa')
+  
+  res.pred[,4] <- predict(tvlm, newdata = as.matrix(combined_data[,3:8]), newz = combined_data$Month)
+  
+# Figures 4 and 5
+library(dplyr)
+library(tidyr)
+
+n <- nrow(combined_data)
+
+# (A) Data for the time-series plot (Figure 5)
+df_time <- data.frame(
+  Month  = combined_data$Month,
+  Actual = combined_data$MonthlyCOVIDRate,
+  LM     = res.pred[, 1],
+  RF     = res.pred[, 2],
+  VCM    = res.pred[, 3],
+  TVLM   = res.pred[, 4]
+)
+
+# Convert to long format for plotting lines over time
+df_time_long <- pivot_longer(df_time, cols = c("Actual", "LM", "RF", "VCM", "TVLM"),
+                             names_to = "Model", values_to = "Value")
+                             
+# (B) Data for the scatter plot (Figure 4)
+# Here, we want to compare observed vs. fitted values for LM and VCM.
+df_scatter <- data.frame(
+  Observed = rep(combined_data$MonthlyCOVIDRate, times = 4),
+  Fitted   = c(res.pred[, 1], res.pred[, 2], res.pred[, 3], res.pred[, 4]),
+  Model    = rep(c("LM", "RF", "VCM", "TVLM"), each = n)
+)
+
+# Figure 4: Scatter Plots of Observed vs. Fitted
+library(ggplot2)
+ggplot(df_scatter, aes(x = Observed, y = Fitted)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  facet_wrap(~ Model, nrow = 1) +
+  xlim(5, 130) +
+  ylim(-10, 100) +
+  labs(x = "Observed", y = "Fitted", title = "Observed vs. Fitted") +
+  theme_minimal()
+
+# Figure 5: Time Series of Actual, LM, and VCM Values
+ggplot() +
+  # Layer for "Actual" (thicker line)
+  geom_line(data = filter(df_time_long, Model == "Actual"),
+            aes(x = Month, y = Value, color = Model, linetype = Model),
+            size = 2) +
+  # Layer for "LM" and "VCM" (thinner lines)
+  geom_line(data = filter(df_time_long, Model != "Actual"),
+            aes(x = Month, y = Value, color = Model, linetype = Model),
+            size = 1) +
+  scale_color_manual(values = c("Actual" = "black", "LM" = "red", "RF" = "green3", "VCM" = "blue", "TVLM" = "pink")) +
+  scale_linetype_manual(values = c("Actual" = 1, "LM" = 2, "RF" = 3, "VCM" = 4, "TVLM" = 5)) +
+  ylim(5, 130) +
+  labs(x = "Month", y = "COVID Rates", title = "COVID Rates over Time") +
+  theme_minimal() +
+  theme(legend.position = c(0.85, 0.85))
+
+# Table 2
+c(mean((res.pred[, 1] - combined_data$MonthlyCOVIDRate)^2), mean((res.pred[, 2] - combined_data$MonthlyCOVIDRate)^2),
+  mean((res.pred[, 3] - combined_data$MonthlyCOVIDRate)^2), mean((res.pred[, 4] - combined_data$MonthlyCOVIDRate)^2))
+
+```
+
+
+
+```{r}
+#combined_data$Month[-4]
+```
+
+```{r}
+tvlm$bw
+# bandwidth still 56
+```
+
+
+```{r}
+# LEAVE-ONE-OUT CROSS VALIDATION
+
+
+#MSE.LOOCV <- vector()
+#for(j in 40:600) {
+#  SE <- vector()
+#for(i in 1:42) {
+  #train <- combined_data[-i,c(1:8)]
+  #test <- combined_data[i,c(1:8)]
+  
+  
+  ####################
+  #vcm.fit_cv <- vcm(y = train$MonthlyCOVIDRate, X = train[,c(3:8)],
+  #             grid = train$Month, t = train$Month, bandwidth = j)
+ # vcm.pred_cv <- colMeans(vcm.fit_cv$coef) %*% t(as.matrix(cbind("intercept" = 1, test[,c(3:8)])))
+  #############
+  #lm.fit <- lm(Sales ~ TV + Radio + Newspaper, data=train)
+  #lm.pred <- predict(lm.fit, newdata=test)
+  #as.matrix(cbind("intercept" = 1, X))
+  #colMeans(vcm.fit$coef)
+  
+#  SE.i <- (vcm.pred_cv - test$MonthlyCOVIDRate)^2
+#  SE <- rbind(SE, SE.i)
+#}
+# nam <- paste("MSE.LOOCV.", j, sep = "")
+# assign(nam, mean(SE))
+
+#MSE.LOOCV.j <- mean(SE)
+#MSE.LOOCV <- rbind(MSE.LOOCV, MSE.LOOCV.j)
+#}
+
+```
+
+
+
+```{r}
+#SE <- vector()
+#for(i in 1:42) {
+  #train <- combined_data[-i,c(1:8)]
+  #test <- combined_data[i,c(1:8)]
+  
+  
+  ####################
+  #vcm.fit_cv <- vcm(y = train$MonthlyCOVIDRate, X = train[,c(3:8)],
+  #             grid = train$Month, t = train$Month, bandwidth = 50)
+ # vcm.pred_cv <- colMeans(vcm.fit_cv$coef) %*% t(as.matrix(cbind("intercept" = 1, test[,c(3:8)])))
+  #############
+  #lm.fit <- lm(Sales ~ TV + Radio + Newspaper, data=train)
+  #lm.pred <- predict(lm.fit, newdata=test)
+  #as.matrix(cbind("intercept" = 1, X))
+  #colMeans(vcm.fit$coef)
+  
+#  SE.i <- (vcm.pred_cv - test$MonthlyCOVIDRate)^2
+#  SE <- rbind(SE, SE.i)
+#}
+# nam <- paste("MSE.LOOCV.", j, sep = "")
+# assign(nam, mean(SE))
+
+#MSE.LOOCVz <- mean(SE)
+#MSE.LOOCVz
+```
+
+```{r}
+#plot(x=c(40:600), y = MSE.LOOCV)
+#abline(h = 452, col = 'red')
+```
+```{r}
+#msecvloo <- data.frame(bandwidth = c(40:600), mse = MSE.LOOCV)
+#ggplot(msecvloo, aes(bandwidth,mse)) +
+#  geom_point() +
+#  scale_x_continuous(breaks = pretty(msecvloo$bandwidth, n=10)) +
+#  scale_y_continuous(breaks = pretty(msecvloo$mse, n=10))+
+#  geom_abline(intercept = 452, slope = 0, col = 'red')
+
+```
+```{r}
+#ggplot(msecvloo, aes(bandwidth,mse)) +
+#  geom_point() +
+#  scale_x_continuous(breaks = pretty(msecvloo$bandwidth, n=10)) +
+#  scale_y_continuous(breaks = pretty(msecvloo$mse, n=10))+
+#  geom_abline(intercept = 452, slope = 0, col = 'red')+
+#  ylim(451,455)
+```
+
